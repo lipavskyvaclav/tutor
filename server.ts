@@ -36,6 +36,93 @@ function safeParseJson<T = any>(text: string): T {
   return JSON.parse(cleaned || '{}');
 }
 
+// User-friendly error message formatter to prevent raw JSON errors from reaching students
+function formatUserFriendlyError(err: any): string {
+  const raw = String(err?.message || err || '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.error?.message) {
+      if (
+        parsed.error.code === 503 ||
+        parsed.error.status === 'UNAVAILABLE' ||
+        parsed.error.message.includes('high demand')
+      ) {
+        return 'AI model je v tuto chvíli dočasně vytížen z důvodu vysoké poptávky. Zkuste to prosím za okamžik znovu.';
+      }
+      return parsed.error.message;
+    }
+  } catch {
+    // not JSON
+  }
+  if (
+    raw.includes('503') ||
+    raw.includes('high demand') ||
+    raw.includes('UNAVAILABLE') ||
+    raw.includes('overloaded')
+  ) {
+    return 'AI model je v tuto chvíli dočasně vytížen z důvodu vysoké poptávky. Zkuste to prosím za okamžik znovu.';
+  }
+  return raw;
+}
+
+// Resilient Gemini generator with automatic retry and model fallback
+async function generateContentWithFallback(options: {
+  contents: any;
+  config?: any;
+  preferredModel?: string;
+}) {
+  const preferred = options.preferredModel || 'gemini-3.8-flash';
+  const modelChain = [preferred];
+  if (preferred !== 'gemini-3.1-flash-lite') {
+    modelChain.push('gemini-3.1-flash-lite');
+  }
+  if (!modelChain.includes('gemini-flash-latest')) {
+    modelChain.push('gemini-flash-latest');
+  }
+
+  let lastError: any = null;
+
+  for (const model of modelChain) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: options.contents,
+          config: options.config,
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || err || '');
+        const isTransient =
+          msg.includes('503') ||
+          msg.includes('high demand') ||
+          msg.includes('UNAVAILABLE') ||
+          msg.includes('429') ||
+          msg.includes('RESOURCE_EXHAUSTED') ||
+          msg.includes('temporarily') ||
+          msg.includes('overloaded') ||
+          msg.includes('socket hang up') ||
+          msg.includes('ETIMEDOUT');
+
+        console.warn(`[Gemini Fallback] Model ${model} (pokus ${attempt}) selhal: ${msg.slice(0, 160)}`);
+
+        if (isTransient) {
+          // Pause before retry or switching model
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt + Math.random() * 300));
+          if (attempt === 2) {
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 // Helper to determine grade description from age
 function getGradeLevelDescription(age: number): string {
   if (age <= 9) return `${age} let (1. stupeň ZŠ, cca 1.–3. třída)`;
@@ -135,8 +222,8 @@ Vrať validní JSON odpovídající požadovanému schématu.
     }
     contents.push({ text: promptText });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateContentWithFallback({
+      preferredModel: 'gemini-3.8-flash',
       contents: contents.length === 1 ? contents[0].text : { parts: contents },
       config: {
         responseMimeType: 'application/json',
@@ -200,7 +287,8 @@ Vrať validní JSON odpovídající požadovanému schématu.
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error in /api/generate-lesson:', error);
-    return res.status(500).json({ error: error.message || 'Nepodařilo se vygenerovat lekci.' });
+    const friendlyError = formatUserFriendlyError(error);
+    return res.status(500).json({ error: friendlyError });
   }
 });
 
@@ -302,8 +390,8 @@ Nový dotaz žáka:
 "${question}"
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateContentWithFallback({
+      preferredModel: 'gemini-3.8-flash',
       contents: prompt,
       config: {
         systemInstruction: systemPrompt,
@@ -313,7 +401,7 @@ Nový dotaz žáka:
     return res.json({ reply: response.text || 'Omlouvám se, na tuto otázku se mi nepodařilo zformulovat odpověď.' });
   } catch (error: any) {
     console.error('Error in /api/tutor-chat:', error);
-    return res.status(500).json({ error: error.message || 'Chyba při zpracování dotazu.' });
+    return res.status(500).json({ error: formatUserFriendlyError(error) });
   }
 });
 
@@ -361,8 +449,8 @@ PŘESNÉ POŽADAVKY NA STRUKTURU TESTU (PŘESNĚ 12 OTÁZEK):
 Vrať výsledek jako validní JSON s polem "questions" obsahujícím přesně 12 objektů očíslovaných 1 až 12.
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateContentWithFallback({
+      preferredModel: 'gemini-3.8-flash',
       contents: testPrompt,
       config: {
         responseMimeType: 'application/json',
@@ -454,7 +542,7 @@ Vrať výsledek jako validní JSON s polem "questions" obsahujícím přesně 12
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error in /api/generate-test:', error);
-    return res.status(500).json({ error: error.message || 'Chyba při generování testu.' });
+    return res.status(500).json({ error: formatUserFriendlyError(error) });
   }
 });
 
@@ -480,8 +568,8 @@ Tón komunikace: ${tonePrompt}
 Vrať JSON se dvěma položkami: "coreTakeaway" a "feedbackMessage".
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateContentWithFallback({
+      preferredModel: 'gemini-3.8-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -500,7 +588,7 @@ Vrať JSON se dvěma položkami: "coreTakeaway" a "feedbackMessage".
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error in /api/final-summary:', error);
-    return res.status(500).json({ error: error.message || 'Chyba při generování závěrečného shrnutí.' });
+    return res.status(500).json({ error: formatUserFriendlyError(error) });
   }
 });
 

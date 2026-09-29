@@ -17,7 +17,35 @@ import {
   TestQuestion, 
   TestEvaluationResult 
 } from './types';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
+
+function cleanErrorMessage(rawMsg: string): string {
+  if (!rawMsg) return 'Nastala neočekávaná chyba.';
+  try {
+    const parsed = JSON.parse(rawMsg);
+    if (parsed.error?.message) {
+      if (
+        parsed.error.code === 503 ||
+        parsed.error.status === 'UNAVAILABLE' ||
+        parsed.error.message.includes('high demand')
+      ) {
+        return 'AI model je v tuto chvíli dočasně vytížen z důvodu vysoké poptávky. Zkuste to prosím za několik sekund znovu tlačítkem níže.';
+      }
+      return parsed.error.message;
+    }
+  } catch {
+    // not JSON
+  }
+  if (
+    rawMsg.includes('503') ||
+    rawMsg.includes('high demand') ||
+    rawMsg.includes('UNAVAILABLE') ||
+    rawMsg.includes('overloaded')
+  ) {
+    return 'AI model je v tuto chvíli dočasně vytížen z důvodu vysoké poptávky. Zkuste to prosím za několik sekund znovu tlačítkem níže.';
+  }
+  return rawMsg;
+}
 
 export default function App() {
   const [profile, setProfile] = useState<StudentProfile | null>(() => {
@@ -86,7 +114,7 @@ export default function App() {
       setCurrentStep('lesson');
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Nepodařilo se vygenerovat lekci. Zkontrolujte připojení a zkuste to znovu.');
+      setErrorMessage(cleanErrorMessage(err.message));
     } finally {
       setIsLoadingLesson(false);
     }
@@ -124,7 +152,7 @@ export default function App() {
       setCurrentStep('test');
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Nepodařilo se sestavit test. Zkuste to prosím znovu.');
+      setErrorMessage(cleanErrorMessage(err.message));
     } finally {
       setIsGeneratingTest(false);
     }
@@ -201,18 +229,43 @@ export default function App() {
       {/* Global Error Banner if any */}
       {errorMessage && (
         <div className="max-w-3xl mx-auto mt-4 px-4 w-full">
-          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <strong className="block font-semibold">Chyba:</strong>
-              {errorMessage}
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-start gap-3 flex-1">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block font-semibold">Upozornění:</strong>
+                <span>{errorMessage}</span>
+              </div>
             </div>
-            <button
-              onClick={() => setErrorMessage(null)}
-              className="text-rose-500 hover:text-rose-800 font-bold text-xs"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              {sessionInput && currentStep === 'topic' && (
+                <button
+                  onClick={() => handleTopicSubmit(sessionInput)}
+                  disabled={isLoadingLesson}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Zkusit znovu</span>
+                </button>
+              )}
+              {lessonData && currentStep === 'lesson' && (
+                <button
+                  onClick={handleStartTest}
+                  disabled={isGeneratingTest}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Zkusit znovu</span>
+                </button>
+              )}
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="text-rose-500 hover:text-rose-800 font-bold text-xs p-1"
+                title="Zavřít"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -229,6 +282,7 @@ export default function App() {
         {currentStep === 'topic' && profile && (
           <TopicSelection
             profile={profile}
+            initialInput={sessionInput}
             onBack={() => setCurrentStep('questionnaire')}
             onSubmit={handleTopicSubmit}
             isLoading={isLoadingLesson}

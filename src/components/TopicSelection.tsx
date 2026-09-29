@@ -16,6 +16,7 @@ import { StudentProfile, AttachedPhoto, TopicSessionInput } from '../types';
 
 interface TopicSelectionProps {
   profile: StudentProfile;
+  initialInput?: TopicSessionInput | null;
   onBack: () => void;
   onSubmit: (data: TopicSessionInput) => void;
   isLoading: boolean;
@@ -32,13 +33,14 @@ const SAMPLE_TOPICS = [
 
 export const TopicSelection: React.FC<TopicSelectionProps> = ({
   profile,
+  initialInput,
   onBack,
   onSubmit,
   isLoading,
 }) => {
-  const [topic, setTopic] = useState('');
-  const [photos, setPhotos] = useState<AttachedPhoto[]>([]);
-  const [selfConfidence, setSelfConfidence] = useState<number>(2);
+  const [topic, setTopic] = useState(initialInput?.topic || '');
+  const [photos, setPhotos] = useState<AttachedPhoto[]>(initialInput?.photos || []);
+  const [selfConfidence, setSelfConfidence] = useState<number>(initialInput?.selfConfidence ?? 2);
   const [isDragging, setIsDragging] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<AttachedPhoto | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
