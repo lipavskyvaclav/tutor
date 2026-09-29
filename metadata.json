@@ -1,0 +1,6 @@
+{
+  "name": "EduMentor AI – Osobní AI Tutor",
+  "description": "Adaptivní AI tutor přizpůsobený věku, zájmům a stylu učení žáka s interaktivním vysvětlením, grafikou, audiem a 12otázkovým testem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
