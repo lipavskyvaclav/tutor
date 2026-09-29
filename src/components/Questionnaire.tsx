@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, 
   Gamepad2, 
-  Flame, 
-  HelpCircle, 
   Check, 
   ArrowRight, 
   ListChecks, 
@@ -12,7 +10,10 @@ import {
   Target, 
   Smile, 
   Info,
-  GraduationCap
+  GraduationCap,
+  Plus,
+  X,
+  Trash2
 } from 'lucide-react';
 import { StudentProfile, PreferredFormat, CommunicationTone } from '../types';
 
@@ -41,14 +42,31 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
   onComplete,
 }) => {
   const [age, setAge] = useState<number>(initialProfile?.age || 13);
-  const [interests, setInterests] = useState<string[]>(initialProfile?.interests || ['Minecraft', 'Fotbal']);
-  const [customInterests, setCustomInterests] = useState<string>(initialProfile?.customInterests || '');
+  const [interests, setInterests] = useState<string[]>(() => {
+    if (initialProfile?.interests && initialProfile.interests.length > 0) {
+      return [...initialProfile.interests];
+    }
+    return ['Minecraft', 'Fotbal a sport'];
+  });
+  const [customInput, setCustomInput] = useState<string>('');
   const [formatPreference, setFormatPreference] = useState<PreferredFormat>(
     initialProfile?.formatPreference || 'bullets'
   );
   const [communicationTone, setCommunicationTone] = useState<CommunicationTone>(
     initialProfile?.communicationTone || 'supportive'
   );
+
+  // Sync state whenever initialProfile changes (e.g. user returns to edit)
+  useEffect(() => {
+    if (initialProfile) {
+      setAge(initialProfile.age || 13);
+      if (Array.isArray(initialProfile.interests)) {
+        setInterests([...initialProfile.interests]);
+      }
+      setFormatPreference(initialProfile.formatPreference || 'bullets');
+      setCommunicationTone(initialProfile.communicationTone || 'supportive');
+    }
+  }, [initialProfile]);
 
   const getGradeEstimate = (currentAge: number) => {
     if (currentAge <= 7) return { grade: '1.–2. třída ZŠ', level: '1. stupeň (začínající čtenář)', note: 'Velmi jednoduchý jazyk, hravost, krátká vysvětlení.' };
@@ -62,25 +80,50 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
 
   const gradeInfo = getGradeEstimate(age);
 
+  // Toggle or add interest
   const toggleInterest = (label: string) => {
-    if (interests.includes(label)) {
-      setInterests(interests.filter((i) => i !== label));
-    } else {
-      setInterests([...interests, label]);
+    setInterests((prev) => {
+      if (prev.includes(label)) {
+        return prev.filter((i) => i !== label);
+      } else {
+        return [...prev, label];
+      }
+    });
+  };
+
+  const removeInterest = (itemToRemove: string) => {
+    setInterests((prev) => prev.filter((i) => i !== itemToRemove));
+  };
+
+  const handleAddCustomInterest = () => {
+    const trimmed = customInput.trim();
+    if (!trimmed) return;
+    if (!interests.includes(trimmed)) {
+      setInterests((prev) => [...prev, trimmed]);
     }
+    setCustomInput('');
+  };
+
+  const clearAllInterests = () => {
+    setInterests([]);
+    setCustomInput('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalInterests = [...interests];
-    if (customInterests.trim() && !finalInterests.includes(customInterests.trim())) {
-      finalInterests.push(customInterests.trim());
+    if (customInput.trim() && !finalInterests.includes(customInput.trim())) {
+      finalInterests.push(customInput.trim());
     }
+
+    // Fallback if empty
+    const finalInterestsSafe = finalInterests.length > 0 ? finalInterests : ['hry a technologie'];
+
     onComplete({
       age,
       gradeLevel: `${gradeInfo.grade} (${gradeInfo.level})`,
-      interests: finalInterests,
-      customInterests,
+      interests: finalInterestsSafe,
+      customInterests: '',
       formatPreference,
       communicationTone,
     });
@@ -149,7 +192,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
                   type="button"
                   key={presetAge}
                   onClick={() => setAge(presetAge)}
-                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${
+                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all cursor-pointer ${
                     age === presetAge
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'
@@ -187,42 +230,114 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
           </div>
 
           <div className="space-y-4">
-            {/* Quick multi-select chips */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {COMMON_INTERESTS.map((item) => {
-                const isSelected = interests.includes(item.label);
-                return (
+            {/* Active interests chips box */}
+            <div className="p-3.5 rounded-xl bg-violet-50/60 border border-violet-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-violet-900">
+                  Aktuálně vybrané zájmy pro didaktické metafory ({interests.length}):
+                </span>
+                {interests.length > 0 && (
                   <button
                     type="button"
-                    key={item.id}
-                    onClick={() => toggleInterest(item.label)}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-medium text-left transition-all ${
-                      isSelected
-                        ? 'bg-violet-50 border-violet-300 text-violet-900 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}
+                    onClick={clearAllInterests}
+                    className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                   >
-                    <span className="text-base select-none">{item.icon}</span>
-                    <span className="truncate flex-1">{item.label}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-violet-600 shrink-0" />}
+                    <Trash2 className="w-3 h-3" />
+                    <span>Odebrat všechny</span>
                   </button>
-                );
-              })}
+                )}
+              </div>
+
+              {interests.length === 0 ? (
+                <p className="text-xs text-violet-600/70 italic">
+                  Zatím jsi nevybral/a žádné zájmy. Klikni na témata níže nebo napiš vlastní.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {interests.map((item) => (
+                    <span
+                      key={item}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-violet-200 text-violet-900 text-xs font-semibold shadow-2xs"
+                    >
+                      <span>{item}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeInterest(item)}
+                        className="p-0.5 text-violet-400 hover:text-rose-600 rounded-full transition-colors cursor-pointer"
+                        title={`Odebrat ${item}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Custom interest input */}
+            {/* Quick multi-select chips */}
+            <div>
+              <span className="text-xs text-slate-500 block mb-2 font-medium">Kliknutím vyber nebo zruš výběr:</span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {COMMON_INTERESTS.map((item) => {
+                  const isSelected = interests.includes(item.label);
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => toggleInterest(item.label)}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-medium text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-base select-none">{item.icon}</span>
+                      <span className="truncate flex-1">{item.label}</span>
+                      {isSelected ? (
+                        <Check className="w-3.5 h-3.5 text-white shrink-0" />
+                      ) : (
+                        <span className="w-3.5 h-3.5 border border-slate-300 rounded-full shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom interest input with explicit add button */}
             <div>
               <label htmlFor="custom-interest" className="block text-xs font-medium text-slate-700 mb-1.5">
-                Nebo doplň své vlastní koníčky:
+                Nebo přidej libovolný vlastní zájem:
               </label>
-              <input
-                id="custom-interest"
-                type="text"
-                value={customInterests}
-                onChange={(e) => setCustomInterests(e.target.value)}
-                placeholder="Např. stavění z Lega, Fortnite, jízda na koni, hra na kytaru..."
-                className="w-full text-xs sm:text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all placeholder:text-slate-400"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="custom-interest"
+                  type="text"
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomInterest();
+                    }
+                  }}
+                  placeholder="Např. jízda na koni, chemické pokusy, Fortnite, hra na kytaru..."
+                  className="flex-1 text-xs sm:text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all placeholder:text-slate-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomInterest}
+                  disabled={!customInput.trim()}
+                  className={`inline-flex items-center gap-1 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    customInput.trim()
+                      ? 'bg-violet-600 hover:bg-violet-700 text-white cursor-pointer shadow-xs'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Přidat</span>
+                </button>
+              </div>
             </div>
 
             {/* Didactic explanation callout */}
@@ -230,7 +345,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
               <Sparkles className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
               <div className="text-xs text-slate-700 leading-relaxed">
                 <span className="font-semibold text-violet-950">Vliv na AI (Didaktická transformace): </span>
-                AI nevyloží látku abstraktně. Když se učíš anglické předložky, fyzikální síly nebo cykly v programování, tutor použije pravidla a mechaniky tvých oblíbených her a sportů jako přirozenou metaforu.
+                AI látku nevysvětlí abstraktně. Když se učíš anglické předložky, chemii nebo logické cykly v informatice, tutor látku aplikuje přímo na mechaniky {interests.slice(0, 3).join(', ') || 'tvých zájmů'}.
               </div>
             </div>
           </div>
@@ -256,7 +371,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
             <button
               type="button"
               onClick={() => setFormatPreference('bullets')}
-              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                 formatPreference === 'bullets'
                   ? 'bg-amber-50/60 border-amber-400 ring-2 ring-amber-400/20'
                   : 'bg-white border-slate-200 hover:border-slate-300'
@@ -281,7 +396,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
             <button
               type="button"
               onClick={() => setFormatPreference('story')}
-              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                 formatPreference === 'story'
                   ? 'bg-amber-50/60 border-amber-400 ring-2 ring-amber-400/20'
                   : 'bg-white border-slate-200 hover:border-slate-300'
@@ -306,7 +421,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
             <button
               type="button"
               onClick={() => setFormatPreference('step_by_step')}
-              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+              className={`p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                 formatPreference === 'step_by_step'
                   ? 'bg-amber-50/60 border-amber-400 ring-2 ring-amber-400/20'
                   : 'bg-white border-slate-200 hover:border-slate-300'
@@ -357,7 +472,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
             <button
               type="button"
               onClick={() => setCommunicationTone('strict')}
-              className={`p-4 rounded-xl border text-left transition-all ${
+              className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
                 communicationTone === 'strict'
                   ? 'bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-400/20'
                   : 'bg-white border-slate-200 hover:border-slate-300'
@@ -381,7 +496,7 @@ export const Questionnaire: React.FC<QuestionnaireProps> = ({
             <button
               type="button"
               onClick={() => setCommunicationTone('supportive')}
-              className={`p-4 rounded-xl border text-left transition-all ${
+              className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
                 communicationTone === 'supportive'
                   ? 'bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-400/20'
                   : 'bg-white border-slate-200 hover:border-slate-300'

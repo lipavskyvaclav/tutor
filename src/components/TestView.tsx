@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import { 
   CheckCircle2, 
   XCircle, 
-  HelpCircle, 
   ArrowRight, 
   ArrowLeft, 
-  AlertTriangle, 
   Sparkles, 
   ListChecks, 
   Shuffle, 
   FileQuestion,
-  RotateCcw,
-  Check,
-  X
+  RotateCcw
 } from 'lucide-react';
 import { 
   StudentProfile, 
@@ -39,7 +35,7 @@ export const TestView: React.FC<TestViewProps> = ({
   onBackToLesson,
 }) => {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
-  // Store user selections per question
+  // Store user selections per question: questionId -> answer
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, any>>({});
   // Matching active pairing state: definitionId -> termId
   const [matchingSlots, setMatchingSlots] = useState<Record<string, string>>({});
@@ -52,9 +48,37 @@ export const TestView: React.FC<TestViewProps> = ({
   // Evaluated questions: questionId -> result
   const [evaluations, setEvaluations] = useState<Record<string, TestEvaluationResult>>({});
 
-  const currentQ = questions[currentIndex];
-  const isCurrentEvaluated = Boolean(evaluations[currentQ?.id]);
-  const currentResult = evaluations[currentQ?.id];
+  const totalQuestions = questions?.length || 0;
+  const currentQ = questions && questions[currentIndex] ? questions[currentIndex] : null;
+
+  // Safe helper if questions ended early
+  if (!currentQ || totalQuestions === 0) {
+    return (
+      <div className="max-w-xl mx-auto my-12 p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center space-y-4">
+        <h2 className="text-xl font-bold text-slate-900">Všechny dostupné otázky byly dokončeny</h2>
+        <p className="text-sm text-slate-600">
+          Můžeš přejít na vyhodnocení svých odpovědí a zobrazení závěrečného shrnutí učiva.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            let totalScore = 0;
+            Object.values(evaluations).forEach((r) => {
+              totalScore += r.score || 0;
+            });
+            onFinishTest(evaluations, Math.round(totalScore));
+          }}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+        >
+          <span>Přejít k závěrečnému vyhodnocení</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  const isCurrentEvaluated = Boolean(evaluations[currentQ.id]);
+  const currentResult = evaluations[currentQ.id];
 
   // Helper for question phase label
   const getCategoryLabel = (index: number) => {
@@ -82,7 +106,7 @@ export const TestView: React.FC<TestViewProps> = ({
     setEvaluations((prev) => ({ ...prev, [q.id]: result }));
   };
 
-  // Matching handler
+  // Matching handlers
   const handleTermClick = (termId: string) => {
     if (isCurrentEvaluated) return;
     // If already slotted somewhere, clicking removes it from slot
@@ -121,31 +145,42 @@ export const TestView: React.FC<TestViewProps> = ({
 
   const submitMatchingAnswer = () => {
     const q = currentQ as MatchingQuestion;
+    const definitions = q.definitions || [];
+    const terms = q.terms || [];
+
     let correctCount = 0;
-    q.definitions.forEach((def) => {
+    definitions.forEach((def) => {
       if (matchingSlots[def.id] === def.correctTermId) {
         correctCount += 1;
       }
     });
 
-    const isFullyCorrect = correctCount === q.definitions.length;
-    const isDistractorUsed = Object.values(matchingSlots).includes(q.distractorTermId);
+    const isFullyCorrect = definitions.length > 0 && correctCount === definitions.length;
+    const distractorId = q.distractorTermId || '';
+    const isDistractorUsed = Boolean(distractorId && Object.values(matchingSlots).includes(distractorId));
+    const distractorTerm = terms.find((t) => t.id === distractorId);
 
     let feedback = '';
     if (isFullyCorrect) {
-      feedback = `Výborně! Všechna 4 přiřazení máš správně. Chyták "${q.terms.find((t) => t.id === q.distractorTermId)?.text}" jsi správně vynechal/a (${q.distractorExplanation}).`;
+      feedback = `Výborně! Všechna přiřazení máš správně. Chyták "${distractorTerm?.text || 'chyták'}" jsi správně vynechal/a.`;
+      if (q.distractorExplanation) {
+        feedback += ` (${q.distractorExplanation})`;
+      }
     } else {
-      feedback = `Správně jsi přiřadil/a ${correctCount} ze 4 definic. `;
+      feedback = `Správně jsi přiřadil/a ${correctCount} z ${definitions.length} definic. `;
       if (isDistractorUsed) {
-        feedback += `Pozor: Použil/a jsi termín "${q.terms.find((t) => t.id === q.distractorTermId)?.text}", což byl chyták navíc! ${q.distractorExplanation}`;
+        feedback += `Pozor: Použil/a jsi termín "${distractorTerm?.text || 'chyták'}", což byl chyták navíc! `;
+        if (q.distractorExplanation) {
+          feedback += q.distractorExplanation;
+        }
       } else {
-        feedback += `Prohlédni si správné dvojice a jejich významy níže.`;
+        feedback += `Prohlédni si správné dvojice níže.`;
       }
     }
 
     const result: TestEvaluationResult = {
       isCorrect: isFullyCorrect,
-      score: correctCount / q.definitions.length,
+      score: definitions.length > 0 ? correctCount / definitions.length : 1,
       studentAnswer: matchingSlots,
       feedback,
       wrongTermExplanation: isDistractorUsed ? q.distractorExplanation : undefined,
@@ -159,7 +194,7 @@ export const TestView: React.FC<TestViewProps> = ({
   const handleCustomChoice = (answerKey: string) => {
     if (isCurrentEvaluated) return;
     const q = currentQ as CustomQuestion;
-    const isCorrect = answerKey.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim();
+    const isCorrect = answerKey.toLowerCase().trim() === (q.correctAnswer || '').toLowerCase().trim();
 
     const result: TestEvaluationResult = {
       isCorrect,
@@ -180,7 +215,7 @@ export const TestView: React.FC<TestViewProps> = ({
 
     const normalized = textInputAnswer.trim().toLowerCase();
     const isCorrect =
-      normalized === q.correctAnswer.toLowerCase().trim() ||
+      normalized === (q.correctAnswer || '').toLowerCase().trim() ||
       Boolean(q.acceptableAnswers?.some((a) => a.toLowerCase().trim() === normalized));
 
     const result: TestEvaluationResult = {
@@ -208,7 +243,7 @@ export const TestView: React.FC<TestViewProps> = ({
       // Calculate total score
       let totalScore = 0;
       Object.values(evaluations).forEach((r) => {
-        totalScore += r.score;
+        totalScore += r.score || 0;
       });
       onFinishTest(evaluations, Math.round(totalScore));
     }
@@ -217,13 +252,18 @@ export const TestView: React.FC<TestViewProps> = ({
   const category = getCategoryLabel(currentIndex);
   const CategoryIcon = category.icon;
 
+  // Safe definitions and terms for Matching Question
+  const matchingDefs = (currentQ as MatchingQuestion).definitions || [];
+  const matchingTerms = (currentQ as MatchingQuestion).terms || [];
+
   return (
     <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6 space-y-6">
       {/* Top Bar with Return button and Progress */}
       <div className="flex items-center justify-between">
         <button
+          type="button"
           onClick={onBackToLesson}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Zpět na shrnutí lekce</span>
@@ -254,7 +294,7 @@ export const TestView: React.FC<TestViewProps> = ({
 
             return (
               <div
-                key={q.id}
+                key={q.id || idx}
                 className={`h-2 rounded-full transition-all ${
                   isCurrent
                     ? 'ring-2 ring-indigo-500 ring-offset-1 bg-indigo-600'
@@ -287,7 +327,7 @@ export const TestView: React.FC<TestViewProps> = ({
         {/* Question Heading */}
         <div>
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
-            Otázka č. {currentIndex + 1} ({currentQ.type.toUpperCase()})
+            Otázka č. {currentIndex + 1} ({String(currentQ.type || 'abcd').toUpperCase()})
           </span>
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 leading-snug">
             {currentQ.question}
@@ -297,7 +337,7 @@ export const TestView: React.FC<TestViewProps> = ({
         {/* ---------------- TYPE 1: ABCD ---------------- */}
         {currentQ.type === 'abcd' && (
           <div className="space-y-3">
-            {(currentQ as ABCDQuestion).options.map((opt) => {
+            {((currentQ as ABCDQuestion).options || []).map((opt) => {
               const q = currentQ as ABCDQuestion;
               const isSelected = selectedAnswers[q.id] === opt.key;
               const isCorrectOpt = q.correctAnswer === opt.key;
@@ -355,25 +395,23 @@ export const TestView: React.FC<TestViewProps> = ({
             <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 leading-relaxed">
               <strong>Pravidla přiřazování:</strong> Klikni nejprve na termín dole a poté na definici, ke které patří.
               <span className="font-semibold text-amber-950 block mt-0.5">
-                ⚠️ Pozor: Z 5 nabízených termínů je 1 chyták navíc, který k žádné definici nepatří!
+                ⚠️ Pozor: Z nabízených termínů je 1 chyták navíc, který k žádné definici nepatří!
               </span>
             </div>
 
             {/* Target Definitions Slots */}
             <div className="space-y-3">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                Cílové definice (4 pozice):
+                Cílové definice ({matchingDefs.length} pozice):
               </span>
-              {(currentQ as MatchingQuestion).definitions.map((def, idx) => {
+              {matchingDefs.map((def, idx) => {
                 const assignedTermId = matchingSlots[def.id];
-                const q = currentQ as MatchingQuestion;
-                const assignedTerm = q.terms.find((t) => t.id === assignedTermId);
+                const assignedTerm = matchingTerms.find((t) => t.id === assignedTermId);
                 const isCorrectMatch = isCurrentEvaluated && assignedTermId === def.correctTermId;
-                const isWrongMatch = isCurrentEvaluated && assignedTermId && assignedTermId !== def.correctTermId;
 
                 return (
                   <div
-                    key={def.id}
+                    key={def.id || idx}
                     onClick={() => handleDefinitionClick(def.id)}
                     className={`p-4 rounded-xl border transition-all cursor-pointer ${
                       isCurrentEvaluated
@@ -426,7 +464,7 @@ export const TestView: React.FC<TestViewProps> = ({
               })}
             </div>
 
-            {/* Available Terms (5 terms) */}
+            {/* Available Terms */}
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -435,7 +473,7 @@ export const TestView: React.FC<TestViewProps> = ({
                 <span className="text-[11px] text-slate-400">1 je chyták navíc</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {(currentQ as MatchingQuestion).terms.map((term) => {
+                {matchingTerms.map((term) => {
                   const isUsed = Object.values(matchingSlots).includes(term.id);
                   const isSelected = selectedMatchingTermId === term.id;
                   const q = currentQ as MatchingQuestion;
@@ -482,9 +520,9 @@ export const TestView: React.FC<TestViewProps> = ({
                 <button
                   type="button"
                   onClick={submitMatchingAnswer}
-                  disabled={Object.keys(matchingSlots).length < 2}
+                  disabled={Object.keys(matchingSlots).length === 0}
                   className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition-all ${
-                    Object.keys(matchingSlots).length < 2
+                    Object.keys(matchingSlots).length === 0
                       ? 'bg-slate-300 cursor-not-allowed'
                       : 'bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer'
                   }`}
@@ -508,7 +546,7 @@ export const TestView: React.FC<TestViewProps> = ({
                 ]).map((opt) => {
                   const q = currentQ as CustomQuestion;
                   const isSelected = selectedAnswers[q.id]?.toLowerCase() === opt.key.toLowerCase();
-                  const isCorrectOpt = q.correctAnswer.toLowerCase() === opt.key.toLowerCase();
+                  const isCorrectOpt = (q.correctAnswer || '').toLowerCase() === opt.key.toLowerCase();
 
                   let style = 'bg-white border-slate-200 hover:border-slate-300 text-slate-800';
                   if (isCurrentEvaluated) {
@@ -609,6 +647,7 @@ export const TestView: React.FC<TestViewProps> = ({
         {isCurrentEvaluated && (
           <div className="pt-4 flex justify-end">
             <button
+              type="button"
               onClick={handleNext}
               className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-sm sm:text-base rounded-xl shadow-xs transition-all cursor-pointer"
             >

@@ -10,6 +10,7 @@ import { TopicSelection } from './components/TopicSelection';
 import { LessonView } from './components/LessonView';
 import { TestView } from './components/TestView';
 import { FinalSummaryView } from './components/FinalSummaryView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
   StudentProfile, 
   TopicSessionInput, 
@@ -83,6 +84,11 @@ export default function App() {
     } catch (e) {
       console.warn('LocalStorage save error:', e);
     }
+    // Clear previously generated lesson and test data so that changed interests immediately apply
+    setLessonData(null);
+    setTestQuestions([]);
+    setTestEvaluations({});
+    setFinalSummary(null);
     setCurrentStep('topic');
   };
 
@@ -272,67 +278,69 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 pb-16">
-        {currentStep === 'questionnaire' && (
-          <Questionnaire
-            initialProfile={profile}
-            onComplete={handleProfileComplete}
-          />
-        )}
+        <ErrorBoundary onReset={handleResetAll}>
+          {currentStep === 'questionnaire' && (
+            <Questionnaire
+              initialProfile={profile}
+              onComplete={handleProfileComplete}
+            />
+          )}
 
-        {currentStep === 'topic' && profile && (
-          <TopicSelection
-            profile={profile}
-            initialInput={sessionInput}
-            onBack={() => setCurrentStep('questionnaire')}
-            onSubmit={handleTopicSubmit}
-            isLoading={isLoadingLesson}
-          />
-        )}
+          {currentStep === 'topic' && profile && (
+            <TopicSelection
+              profile={profile}
+              initialInput={sessionInput}
+              onBack={() => setCurrentStep('questionnaire')}
+              onSubmit={handleTopicSubmit}
+              isLoading={isLoadingLesson}
+            />
+          )}
 
-        {currentStep === 'lesson' && profile && lessonData && (
-          <LessonView
-            profile={profile}
-            lesson={lessonData}
-            onStartTest={handleStartTest}
-            isGeneratingTest={isGeneratingTest}
-          />
-        )}
+          {currentStep === 'lesson' && profile && lessonData && (
+            <LessonView
+              profile={profile}
+              lesson={lessonData}
+              onStartTest={handleStartTest}
+              isGeneratingTest={isGeneratingTest}
+            />
+          )}
 
-        {currentStep === 'test' && profile && testQuestions.length > 0 && (
-          <TestView
-            profile={profile}
-            topic={lessonData?.topic || sessionInput?.topic || ''}
-            questions={testQuestions}
-            onFinishTest={handleFinishTest}
-            onBackToLesson={() => setCurrentStep('lesson')}
-          />
-        )}
+          {currentStep === 'test' && profile && testQuestions.length > 0 && (
+            <TestView
+              profile={profile}
+              topic={lessonData?.topic || sessionInput?.topic || ''}
+              questions={testQuestions}
+              onFinishTest={handleFinishTest}
+              onBackToLesson={() => setCurrentStep('lesson')}
+            />
+          )}
 
-        {currentStep === 'final_summary' && profile && (
-          <FinalSummaryView
-            profile={profile}
-            topic={lessonData?.topic || sessionInput?.topic || ''}
-            score={testScore}
-            totalQuestions={testQuestions.length || 12}
-            evaluations={testEvaluations}
-            questions={testQuestions}
-            finalSummaryText={
-              finalSummary?.coreTakeaway ||
-              lessonData?.keyPoints?.join('. ') ||
-              'Klíčové shrnutí tématu.'
-            }
-            tutorFeedback={
-              finalSummary?.feedbackMessage ||
-              'Gratuluji k dokončení procvičování!'
-            }
-            onRetakeTest={() => {
-              setTestEvaluations({});
-              setCurrentStep('test');
-            }}
-            onNewTopic={handleResetAll}
-            onEditProfile={handleEditProfile}
-          />
-        )}
+          {currentStep === 'final_summary' && profile && (
+            <FinalSummaryView
+              profile={profile}
+              topic={lessonData?.topic || sessionInput?.topic || ''}
+              score={testScore}
+              totalQuestions={testQuestions.length || 12}
+              evaluations={testEvaluations}
+              questions={testQuestions}
+              finalSummaryText={
+                finalSummary?.coreTakeaway ||
+                lessonData?.keyPoints?.join('. ') ||
+                'Klíčové shrnutí tématu.'
+              }
+              tutorFeedback={
+                finalSummary?.feedbackMessage ||
+                'Gratuluji k dokončení procvičování!'
+              }
+              onRetakeTest={() => {
+                setTestEvaluations({});
+                setCurrentStep('test');
+              }}
+              onNewTopic={handleResetAll}
+              onEditProfile={handleEditProfile}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Footer */}

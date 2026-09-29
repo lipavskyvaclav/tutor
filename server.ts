@@ -405,6 +405,101 @@ Nový dotaz žáka:
   }
 });
 
+// Helper to normalize and guarantee the structure of all 12 questions
+function normalizeQuestions(rawQuestions: any[], topic: string): any[] {
+  const result: any[] = [];
+  const list = Array.isArray(rawQuestions) ? rawQuestions : [];
+
+  for (let i = 0; i < 12; i++) {
+    const num = i + 1;
+    const q = list[i] || {};
+    const expectedType = num <= 4 ? 'abcd' : num <= 8 ? 'matching' : 'custom';
+    const type = (q.type === 'abcd' || q.type === 'matching' || q.type === 'custom') ? q.type : expectedType;
+
+    if (type === 'abcd') {
+      const defaultOptions = [
+        { key: 'A', text: 'První možnost odpovědi' },
+        { key: 'B', text: 'Druhá možnost odpovědi' },
+        { key: 'C', text: 'Třetí možnost odpovědi' },
+        { key: 'D', text: 'Čtvrtá možnost odpovědi' },
+      ];
+      const options = Array.isArray(q.options) && q.options.length >= 2 ? q.options : defaultOptions;
+      result.push({
+        id: q.id || `q-${num}`,
+        number: num,
+        type: 'abcd',
+        question: q.question || `Otázka ${num} k tématu: ${topic}`,
+        contextScenario: q.contextScenario || '',
+        options,
+        correctAnswer: (q.correctAnswer && ['A', 'B', 'C', 'D'].includes(String(q.correctAnswer).toUpperCase()))
+          ? String(q.correctAnswer).toUpperCase()
+          : (options[0]?.key || 'A'),
+        explanationCorrect: q.explanationCorrect || 'Tato možnost správně vystihuje probírané učivo.',
+        explanationsWrong: q.explanationsWrong || {
+          A: 'Tento termín má odlišný význam a nepopisuje tuto situaci.',
+          B: 'Tato možnost představuje jiný princip.',
+          C: 'Tento pojem neodpovídá zadání.',
+          D: 'Tato varianta není správná.',
+        },
+      });
+    } else if (type === 'matching') {
+      let definitions = Array.isArray(q.definitions) ? q.definitions.filter((d: any) => d && d.definition) : [];
+      let terms = Array.isArray(q.terms) ? q.terms.filter((t: any) => t && t.text) : [];
+
+      if (definitions.length < 4 || terms.length < 5) {
+        definitions = [
+          { id: `def-${num}-1`, definition: `Základní definice a princip (${topic})`, correctTermId: `term-${num}-1` },
+          { id: `def-${num}-2`, definition: `Praktické využití a pravidlo v praxi`, correctTermId: `term-${num}-2` },
+          { id: `def-${num}-3`, definition: `Klíčová vlastnost nebo vzorec`, correctTermId: `term-${num}-3` },
+          { id: `def-${num}-4`, definition: `Důležitá souvislost a důsledek`, correctTermId: `term-${num}-4` },
+        ];
+        terms = [
+          { id: `term-${num}-1`, text: 'Klíčový pojem 1' },
+          { id: `term-${num}-2`, text: 'Klíčový pojem 2' },
+          { id: `term-${num}-3`, text: 'Klíčový pojem 3' },
+          { id: `term-${num}-4`, text: 'Klíčový pojem 4' },
+          { id: `term-${num}-5`, text: 'Chyták navíc' },
+        ];
+      }
+
+      const distractorTermId = q.distractorTermId || terms[terms.length - 1]?.id || `term-${num}-5`;
+
+      result.push({
+        id: q.id || `q-${num}`,
+        number: num,
+        type: 'matching',
+        question: q.question || `Přiřaď správné pojmy ke 4 definicím tématu ${topic} (jeden je chyták navíc):`,
+        contextScenario: q.contextScenario || '',
+        instructions: q.instructions || 'Přiřaď 4 správné termíny ke 4 definicím. Jeden termín je chyták navíc!',
+        definitions,
+        terms,
+        distractorTermId,
+        distractorExplanation: q.distractorExplanation || 'Tento pojem byl distractor (chyták) a k žádné definici nepatří.',
+      });
+    } else {
+      // custom
+      result.push({
+        id: q.id || `q-${num}`,
+        number: num,
+        type: 'custom',
+        subType: q.subType || 'true_false',
+        question: q.question || `Tvrzení k ověření pro téma: ${topic}`,
+        contextScenario: q.contextScenario || '',
+        options: Array.isArray(q.options) && q.options.length >= 2 ? q.options : [
+          { key: 'ano', text: 'Pravda / Ano' },
+          { key: 'ne', text: 'Nepravda / Ne' },
+        ],
+        correctAnswer: q.correctAnswer || 'ano',
+        acceptableAnswers: Array.isArray(q.acceptableAnswers) ? q.acceptableAnswers : [q.correctAnswer || 'ano'],
+        explanationCorrect: q.explanationCorrect || 'Tato odpověď je správná.',
+        explanationWrongCommon: q.explanationWrongCommon || 'Pozor na častý omyl v této oblasti.',
+      });
+    }
+  }
+
+  return result;
+}
+
 // 4. Generate Comprehensive 12-Question Test
 app.post('/api/generate-test', async (req, res) => {
   try {
@@ -539,7 +634,8 @@ Vrať výsledek jako validní JSON s polem "questions" obsahujícím přesně 12
     });
 
     const parsed = safeParseJson(response.text || '{}');
-    return res.json(parsed);
+    const safeQuestions = normalizeQuestions(parsed.questions || [], topic || 'Učivo');
+    return res.json({ topic: parsed.topic || topic, questions: safeQuestions });
   } catch (error: any) {
     console.error('Error in /api/generate-test:', error);
     return res.status(500).json({ error: formatUserFriendlyError(error) });
